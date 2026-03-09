@@ -1,0 +1,5 @@
+# Allow all crawlers to access all content
+User-agent: *
+Disallow:
+
+Sitemap: https://gematria-calculator.jasonbrain.com/sitemap.xml

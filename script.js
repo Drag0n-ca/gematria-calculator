@@ -146,7 +146,38 @@ const alphanumericQabbalaMap = {
 };
 
 document.addEventListener('DOMContentLoaded', () => {
-  const themeToggle = document.getElementById('theme-toggle');
+  const header = document.querySelector('header');
+  if (header) {
+    fetch('/header.html')
+      .then(response => response.text())
+      .then(data => {
+        header.innerHTML = data;
+        initializeHeader();
+      });
+  }
+  initializeScrollToTop();
+  initializeScrollBehavior();
+
+  const footer = document.querySelector('footer');
+  if (footer) {
+    fetch('/footer.html')
+      .then(response => response.text())
+      .then(data => {
+        footer.innerHTML = data;
+      });
+  }
+  initializePage();
+});
+
+function initializeHeader() {
+  // This function now handles all header-related initializations
+  initializeThemeToggle();
+  initializeHamburgerMenu();
+  populateMobileNav();
+}
+
+
+function initializeThemeToggle() { // This function remains mostly the same
   const isIndexPage = document.getElementById('gematria-form');
   const isCiphersPage = document.getElementById('cipher-tables');
 
@@ -166,18 +197,107 @@ document.addEventListener('DOMContentLoaded', () => {
     applyTheme('light');
   }
 
+  const themeToggle = document.getElementById('theme-toggle');
   themeToggle.addEventListener('click', () => {
     const currentTheme = document.documentElement.getAttribute('data-theme');
     const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
     applyTheme(newTheme);
   });
+}
 
+function initializeHamburgerMenu() {
+  const hamburger = document.getElementById('hamburger-menu');
+  const mobileNav = document.getElementById('mobile-nav');
+  const mainContent = document.querySelector('.gematria-calculator, .content-card, #cipher-tables');
+
+  if (hamburger && mobileNav) {
+    hamburger.addEventListener('click', () => {
+      hamburger.classList.toggle('open');
+      mobileNav.classList.toggle('open');
+    });
+
+    // Close menu when clicking outside of it
+    document.body.addEventListener('click', (event) => {
+      if (mobileNav.classList.contains('open') && !mobileNav.contains(event.target) && !hamburger.contains(event.target)) {
+        hamburger.classList.remove('open');
+        mobileNav.classList.remove('open');
+      }
+    });
+  }
+}
+
+function populateMobileNav() {
+  const mobileNav = document.getElementById('mobile-nav');
+  const desktopNav = document.querySelector('header nav');
+  if (mobileNav && desktopNav) {
+    mobileNav.innerHTML = desktopNav.innerHTML;
+  }
+}
+
+function initializeScrollBehavior() {
+  const header = document.querySelector('header');
+  const footer = document.querySelector('footer');
+  if (!header || !footer) return;
+
+  let lastScrollTop = 0;
+  const scrollThreshold = 5; // Pixels to scroll before triggering hide/show
+
+  window.addEventListener('scroll', () => {
+    const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+    const scrollHeight = document.documentElement.scrollHeight;
+    const clientHeight = document.documentElement.clientHeight;
+
+    if (scrollTop > lastScrollTop && scrollTop > header.offsetHeight && Math.abs(scrollTop - lastScrollTop) > scrollThreshold) {
+      // Scrolling down
+      header.classList.add('header-hidden');
+      footer.classList.add('footer-hidden');
+    } else if (scrollTop < lastScrollTop && Math.abs(scrollTop - lastScrollTop) > scrollThreshold) {
+      // Scrolling up
+      header.classList.remove('header-hidden');
+      footer.classList.remove('footer-hidden');
+    }
+
+    lastScrollTop = scrollTop <= 0 ? 0 : scrollTop;
+  }, false);
+}
+
+function initializeScrollToTop() {
+  const scrollToTopBtn = document.getElementById('scroll-to-top');
+  if (!scrollToTopBtn) return;
+
+  window.addEventListener('scroll', () => {
+    if (window.pageYOffset > 300) {
+      scrollToTopBtn.classList.add('visible');
+    } else {
+      scrollToTopBtn.classList.remove('visible');
+    }
+  });
+
+  scrollToTopBtn.addEventListener('click', () => {
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth'
+    });
+  });
+}
+
+
+function initializePage() {
+  const isIndexPage = document.getElementById('gematria-form');
+  const isCiphersPage = document.getElementById('cipher-tables');
+  
   if (isIndexPage) {
     const overlay = document.getElementById('systems-overlay');
     const openBtn = document.getElementById('open-systems-overlay');
     const closeBtn = document.getElementById('close-overlay');
     const saveBtn = document.getElementById('save-systems');
     const gematriaWord = document.getElementById('gematria-word');
+
+    // Load and inject custom ciphers into the overlay
+    loadCustomCiphersIntoOverlay();
+
+    // Parse URL parameters for shareable links
+    loadFromURLParameters();
 
     openBtn.addEventListener('click', () => overlay.style.display = 'flex');
     closeBtn.addEventListener('click', () => overlay.style.display = 'none');
@@ -213,7 +333,92 @@ document.addEventListener('DOMContentLoaded', () => {
   if (isCiphersPage) {
     displayCipherTables();
   }
-});
+}
+
+/**
+ * Load calculator state from URL parameters
+ * Supports: ?q=text&ciphers=ordinal,reduction&sort=value
+ */
+function loadFromURLParameters() {
+  const urlParams = new URLSearchParams(window.location.search);
+  
+  // Load text input
+  if (urlParams.has('q')) {
+    const text = urlParams.get('q');
+    document.getElementById('gematria-word').value = text;
+  }
+  
+  // Load selected ciphers
+  if (urlParams.has('ciphers')) {
+    const ciphers = urlParams.get('ciphers').split(',');
+    document.querySelectorAll('[name="system"]').forEach(cb => {
+      cb.checked = ciphers.includes(cb.value);
+    });
+  }
+  
+  // Load sort preference
+  if (urlParams.has('sort')) {
+    const sort = urlParams.get('sort');
+    if (['default', 'name', 'value'].includes(sort)) {
+      localStorage.setItem('resultsSortBy', sort);
+    }
+  }
+}
+
+/**
+ * Load custom ciphers and inject them into the systems overlay
+ */
+function loadCustomCiphersIntoOverlay() {
+  if (typeof CipherManager === 'undefined') return;
+  
+  const customCiphers = CipherManager.loadCustomCiphers();
+  if (customCiphers.length === 0) return;
+
+  const systemGrid = document.querySelector('.system-grid');
+  if (!systemGrid) return;
+
+  // Remove any existing custom cipher section
+  const existingSeparator = systemGrid.querySelector('.custom-cipher-separator');
+  if (existingSeparator) {
+    let nextElement = existingSeparator.nextElementSibling;
+    while (nextElement && nextElement.classList.contains('custom-cipher-item')) {
+      const toRemove = nextElement;
+      nextElement = nextElement.nextElementSibling;
+      toRemove.remove();
+    }
+    existingSeparator.remove();
+  }
+
+  // Add separator
+  const separator = document.createElement('div');
+  separator.className = 'custom-cipher-separator';
+  separator.style.gridColumn = '1 / -1';
+  separator.style.borderTop = '2px solid var(--border-color)';
+  separator.style.margin = '10px 0';
+  separator.style.paddingTop = '10px';
+  separator.innerHTML = '<strong style="color: var(--primary-color);">Custom Ciphers</strong>';
+  systemGrid.appendChild(separator);
+
+  // Add custom cipher checkboxes
+  customCiphers.forEach(cipher => {
+    const label = document.createElement('label');
+    label.className = 'custom-cipher-item';
+    label.innerHTML = `
+      <input type="checkbox" name="system" value="custom-${cipher.id}">
+      ${escapeHtml(cipher.name)}
+    `;
+    systemGrid.appendChild(label);
+  });
+}
+
+/**
+ * Escape HTML to prevent XSS
+ */
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
 
 function calculateGematria() {
   const word = document.getElementById('gematria-word').value.trim();
@@ -239,12 +444,69 @@ function calculateGematria() {
     };
   });
 
+  // Apply sorting based on current sort preference
+  const sortBy = localStorage.getItem('resultsSortBy') || 'default';
+  sortResults(results, sortBy);
+
   displayResults(results);
+}
+
+/**
+ * Sort results array based on sort type
+ * @param {Array} results - Array of result objects
+ * @param {string} sortBy - 'default', 'name', or 'value'
+ */
+function sortResults(results, sortBy) {
+  if (sortBy === 'name') {
+    results.sort((a, b) => {
+      const nameA = getSystemDisplayName(a.system).toLowerCase();
+      const nameB = getSystemDisplayName(b.system).toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
+  } else if (sortBy === 'value') {
+    results.sort((a, b) => b.value - a.value); // Descending order (highest first)
+  }
+  // 'default' keeps original order (order of selection)
+}
+
+/**
+ * Get display name for a system
+ * @param {string} system - System identifier
+ * @returns {string} Display name
+ */
+function getSystemDisplayName(system) {
+  if (system === 'alphanumeric') return 'Alphanumeric Qabbala (AQ)';
+  if (system.startsWith('custom-')) {
+    const cipher = typeof CipherManager !== 'undefined' 
+      ? CipherManager.getCipherById(system.replace('custom-', ''))
+      : null;
+    return cipher ? cipher.name : system;
+  }
+  // Convert kebab-case to Title Case
+  return system.split('-').map(word => 
+    word.charAt(0).toUpperCase() + word.slice(1)
+  ).join(' ');
 }
 
 function calculateSystemValue(word, system) {
   const upperWord = word.toUpperCase();
   let total = 0;
+  
+  // Check if this is a custom cipher
+  if (system.startsWith('custom-')) {
+    const customMap = typeof CipherManager !== 'undefined' 
+      ? CipherManager.getCustomCipherMap(system.replace('custom-', ''))
+      : null;
+    
+    if (customMap) {
+      for (const char of upperWord) {
+        total += customMap[char] || 0;
+      }
+      return total;
+    }
+    // If custom cipher not found, return 0
+    return 0;
+  }
   
   for (const char of upperWord) {
     if (system === 'alphanumeric') {
@@ -360,15 +622,91 @@ function displayResults(results) {
   const container = document.getElementById('gematria-results');
   container.innerHTML = '';
   
+  // Get current sort preference
+  const sortBy = localStorage.getItem('resultsSortBy') || 'default';
+  
+  // Create sort controls
+  const sortControlsHTML = `
+    <div class="sort-controls">
+      <span class="sort-label">Sort by:</span>
+      <button class="btn-sort ${sortBy === 'default' ? 'active' : ''}" data-sort="default">Default Order</button>
+      <button class="btn-sort ${sortBy === 'name' ? 'active' : ''}" data-sort="name">Name</button>
+      <button class="btn-sort ${sortBy === 'value' ? 'active' : ''}" data-sort="value">Value</button>
+      <button class="btn-share" id="share-link-btn" title="Copy shareable link">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+        </svg>
+        Share
+      </button>
+    </div>
+  `;
+  
   const resultsHTML = results.map(result => `
     <div class="result-column">
-      <div class="system-name">${result.system === 'alphanumeric' ? 'Alphanumeric Qabbala (AQ)' : result.system}</div>
+      <div class="system-name">${getSystemDisplayName(result.system)}</div>
       <div class="primary-result">${result.value}</div>
       ${result.reduced ? `<div class="reduced-result">${result.reduced}</div>` : ''}
     </div>
   `).join('');
 
-  container.innerHTML = `<div class="results-container">${resultsHTML}</div>`;
+  container.innerHTML = `
+    ${sortControlsHTML}
+    <div class="results-container">${resultsHTML}</div>
+  `;
+  
+  // Attach event listeners to sort buttons
+  document.querySelectorAll('.btn-sort').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const newSortBy = e.target.dataset.sort;
+      localStorage.setItem('resultsSortBy', newSortBy);
+      calculateGematria(); // Re-calculate to apply new sort
+    });
+  });
+  
+  // Attach event listener to share button
+  document.getElementById('share-link-btn')?.addEventListener('click', generateShareLink);
+}
+
+/**
+ * Generate and copy shareable link to clipboard
+ */
+function generateShareLink() {
+  const text = document.getElementById('gematria-word').value.trim();
+  const selectedSystems = Array.from(document.querySelectorAll('[name="system"]:checked')).map(cb => cb.value);
+  const sortBy = localStorage.getItem('resultsSortBy') || 'default';
+  
+  // Build URL parameters
+  const params = new URLSearchParams();
+  if (text) params.set('q', text);
+  if (selectedSystems.length > 0) params.set('ciphers', selectedSystems.join(','));
+  if (sortBy !== 'default') params.set('sort', sortBy);
+  
+  // Generate full URL
+  const baseUrl = window.location.origin + window.location.pathname;
+  const shareUrl = `${baseUrl}?${params.toString()}`;
+  
+  // Copy to clipboard
+  navigator.clipboard.writeText(shareUrl).then(() => {
+    // Show success feedback
+    const btn = document.getElementById('share-link-btn');
+    const originalHTML = btn.innerHTML;
+    btn.innerHTML = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="20 6 9 17 4 12"></polyline>
+      </svg>
+      Copied!
+    `;
+    btn.classList.add('copied');
+    
+    setTimeout(() => {
+      btn.innerHTML = originalHTML;
+      btn.classList.remove('copied');
+    }, 2000);
+  }).catch(err => {
+    alert('Failed to copy link. Please try again.');
+    console.error('Copy failed:', err);
+  });
 }
 
 function showError(message) {
